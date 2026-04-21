@@ -151,6 +151,52 @@ def combine(path_to_structures, path_to_combined_file):
         content = read_file(file)
         write_file(content, path_to_combined_file, index, is_last)
 
+def read_numerous_pdb(pdb_files, batch_size=1000):
+    """
+    Read a large number of PDB files in batches and combine them into a single MDAnalysis Universe.
+
+    Parameters
+    ----------
+    pdb_files : list of str
+        List of file paths to the PDB files to be read.
+    batch_size : int, optional
+        Number of PDB files to read in each batch. Default is 1000.
+
+    Returns
+    -------
+    MDAnalysis.Universe
+        A single MDAnalysis Universe containing the combined frames from all the PDB files.
+        
+    Notes
+    -----
+    - This function reads PDB files in batches to avoid memory issues.
+    - Each batch of PDB files is loaded into a temporary Universe, and the positions of each frame
+      are stored in a list.
+    - The list of frames is then converted into a numpy array and used to create a new Universe with
+      a MemoryReader, combining all the frames.
+    
+    Example
+    -------
+    >>> pdb_files = ['file1.pdb', 'file2.pdb', ...]
+    >>> combined_universe = read_numerous_pdb(pdb_files, batch_size=1000)
+    >>> print(combined_universe)
+    """
+
+    all_frames = []
+    
+    for i in range(0, len(pdb_files), batch_size):
+        # print(f"Reading frames {i:5} to {i+batch_size:5}, total : {len(pdb_files[i:i+batch_size])} frames")
+        local_u = mda.Universe(pdb_files[0], pdb_files[i:i+batch_size])
+        for ts in local_u.trajectory:
+            all_frames.append(ts.positions.copy())
+        del local_u
+    
+    # print("Convert to numpy")
+    frames_array = np.array(all_frames)
+    del all_frames
+    
+    # print(frames_array.shape)
+    return mda.Universe(pdb_files[0], frames_array, format=MemoryReader, order='fac')
 
 def stream_traj_numpy(top, traj, selection, chunk_size=1000):
     u = mda.Universe(top, traj)
@@ -190,20 +236,27 @@ if __name__ == "__main__":
     output_path = args.output_path  
     input_top = args.pdb_0 
     struct_path = args.path_to_pdbs
-    atomSelection = args.sele
-    combine(struct_path, output_path)
+    pdb_list = []
+    for i in range(0, 100000):
+        pdb_list.append(f"{struct_path}/structure_z_{i}.pdb")
 
+    for j in range(100000, 200000):
+        pdb_list.append(f"{struct_path}/structure_z_{i}.pdb")
+    #[f for f in os.listdir(struct_path)]
+    atomSelection = args.sele
+    #combine(struct_path, output_path)
+    input_traj = read_numerous_pdb(pdb_list)
     kmeans = MiniBatchKMeans(
     n_clusters=4,
     batch_size=1000)
 
-    for chunk in stream_traj_numpy(input_top, output_path, atomSelection):
+    for chunk in stream_traj_numpy(input_top, input_traj, atomSelection):
         X = chunk.reshape(chunk.shape[0], -1)
         kmeans.partial_fit(X)
 
     labels_all = []
 
-    for chunk in stream_traj_numpy(input_top, output_path, atomSelection):
+    for chunk in stream_traj_numpy(input_top, input_traj, atomSelection):
         X = chunk.reshape(chunk.shape[0], -1)
         labels = kmeans.predict(X)
         labels_all.append(labels)
