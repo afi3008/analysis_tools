@@ -8,7 +8,7 @@ import argparse
 import re
 import os
 import glob
-
+from pathlib import Path
 
 parser_arg = argparse.ArgumentParser()
 parser_arg.add_argument('--pdb_0', type=str, help='Path to strucutre_z_0.pdb, or alternatively a suitable topology.')
@@ -17,212 +17,31 @@ parser_arg.add_argument('--align', action=argparse.BooleanOptionalAction, defaul
 parser_arg.add_argument("--output_path", type=str, required=True, help="path to the pdb file containing the combined pdb")
 parser_arg.add_argument('--sele', type=str, default='protein', help="AtomSelection for loading structures. Default is protein.")
 
+
 warnings.filterwarnings("ignore",
     category=UserWarning,
     module="MDAnalysis.coordinates.TRJ")
-    
-
-def return_pattern(filepath):
-    """
-    Returns the index number of the file name.
-    :param filepath: str, path of the file
-    :return: integer, the index of the file.
-    """
-    if not isinstance(filepath, str):
-        raise TypeError("The file path must of type str")
-    if not re.match(".*structure_z_[0-9]+\\.pdb", filepath):
-        raise ValueError(
-            "The file names must match the format '*/structure_z_[0-9]+\\.pdb'"
-        )
-    file_name = re.search(r"structure_z_\d+\.pdb", filepath).group(0)
-    return int(re.search("[0-9]+", file_name).group(0))
 
 
-def get_indexes(list_file):
-    """
-    Get the integer part of the filenames, where the filenames are in the format:
-    structure_z_i.pdb where i in the integer.
-    :param list_file: list of string, path of each file.
-    :return: list of integer, containing the integer of each filename in the same order.
-    """
-    index_list = [return_pattern(f) for f in list_file]
-    return index_list
-
-
-def read_file(file_path):
-    """
-    Read the content of a PDB file
-    :param file_path: str, path to the file to read.
-    :return: str, content of the pdb file.
-    """
-    with open(file_path, "r") as f:
-        content = f.readlines()
-
-    return content
-
-
-def write_file(content, file_path, i, is_last):
-    """
-    Write the content in the given file.
-    :param content: list of string, lines to write in the file.
-    :param file_path: str, path to the file in which we want to write.
-    :param i: number of the model.
-    :return: None
-    """
-    with open(file_path, "a") as f:
-        f.write(f"MODEL      {i}\n")
-        f.writelines(content)
-        f.write("ENDMDL\n")
-        if is_last:
-            f.write("END\n")
-
-
-def get_files(path_to_structures):
-    """
-    Get the list of the files in the structure folder and return it
-    :param path_to_structures: str, path to the folder containing the structures.
-    :return: list of the files path
-    """
-    if not isinstance(path_to_structures, str):
-        raise ValueError(
-            "The path to the folder containing the structures should be a string."
-        )
-    if not os.path.isdir(path_to_structures):
-        raise ValueError(f"This path {path_to_structures} does not exists")
-
-    path_format = f"{path_to_structures}structure_z_[0-9]*.pdb"
-    structures_path = glob.glob(path_format)
-    if structures_path == []:
-        raise Exception(f"""The folder {path_to_structures} does not contain any file in the format
-                        {path_format}""")
-    return structures_path
-
-
-def sort_files(list_files, list_indexes):
-    """
-    Sort the list of files by the number of the structure. The file names are in the format:
-    structure_z_i.pdb where i is an integer.
-    :param list_files: list of str, list of path to the pdb.
-    :param list_indexes: list of integer, list of the pdb numbers.
-    :return: list of str, list of path to the pdb but sorted by their structure number.
-    """
-    if not isinstance(list_files, list):
-        raise TypeError("Firt argument must be a list")
-
-    if not isinstance(list_indexes, list):
-        raise TypeError("Second argument must be a list")
-
-    index_file_tuple = zip(list_indexes, list_files)
-    sorted_index_file_tuple = sorted(index_file_tuple)
-    sorted_indexes, sorted_files = list(zip(*sorted_index_file_tuple))
-    return sorted_indexes, sorted_files
-
-
-def check_output_file_exists(path):
-    """
-    Check if the file exists and deletes it if it does
-    :param path: str, path to the file that will combine the different pdb.
-    :return: None
-    """
-    if os.path.isfile(path):
-        os.remove(path)
-
-
-def combine(path_to_structures, path_to_combined_file):
-    """
-    This function combines different pdb files in a single one
-    containing different models.
-    Arguments:
-        - path_to_structures: str, path to the folder containing the structures
-        - path_to_combined_file: str, path to the file that will combine the contents.
-    :return: None
-    """
-    _, ext = os.path.splitext(path_to_combined_file)
-    if ext != ".pdb":
-        raise Exception("The output file must be a .pdb file.")
-
-    list_files = get_files(path_to_structures)
-    list_indexes = get_indexes(list_files)
-    sorted_list_indexes, sorted_list_files = sort_files(list_files, list_indexes)
-    N_files = len(sorted_list_files)
-    check_output_file_exists(path_to_combined_file)
-    for i, (index, file) in enumerate(zip(sorted_list_indexes, sorted_list_files)):
-        is_last = N_files == i + 1
-        content = read_file(file)
-        write_file(content, path_to_combined_file, index, is_last)
-
-def read_numerous_pdb(pdb_files, batch_size=1000):
-    """
-    Read a large number of PDB files in batches and combine them into a single MDAnalysis Universe.
-
-    Parameters
-    ----------
-    pdb_files : list of str
-        List of file paths to the PDB files to be read.
-    batch_size : int, optional
-        Number of PDB files to read in each batch. Default is 1000.
-
-    Returns
-    -------
-    MDAnalysis.Universe
-        A single MDAnalysis Universe containing the combined frames from all the PDB files.
-        
-    Notes
-    -----
-    - This function reads PDB files in batches to avoid memory issues.
-    - Each batch of PDB files is loaded into a temporary Universe, and the positions of each frame
-      are stored in a list.
-    - The list of frames is then converted into a numpy array and used to create a new Universe with
-      a MemoryReader, combining all the frames.
-    
-    Example
-    -------
-    >>> pdb_files = ['file1.pdb', 'file2.pdb', ...]
-    >>> combined_universe = read_numerous_pdb(pdb_files, batch_size=1000)
-    >>> print(combined_universe)
-    """
-
-    all_frames = []
-    
-    for i in range(0, len(pdb_files), batch_size):
-        # print(f"Reading frames {i:5} to {i+batch_size:5}, total : {len(pdb_files[i:i+batch_size])} frames")
-        local_u = mda.Universe(pdb_files[0], pdb_files[i:i+batch_size])
-        for ts in local_u.trajectory:
-            all_frames.append(ts.positions.copy())
-        del local_u
-    
-    # print("Convert to numpy")
-    frames_array = np.array(all_frames)
-    del all_frames
-    
-    # print(frames_array.shape)
-    return mda.Universe(pdb_files[0], frames_array, format=MemoryReader, order='fac')
-
-def stream_traj_numpy(top, traj, selection, chunk_size=1000):
-    u = mda.Universe(top, traj)
+def stream_aligned(path_pdb, selection, align=False, pattern="structure_z_*.pdb", chunk_size=1000):
+    files = sorted(
+        Path(path_pdb).glob(pattern),
+        key=lambda p: int(p.stem.split("_")[-1])
+    )
+    # initialize once
+    u = mda.Universe(str(files[0]))
+    ref = mda.Universe(str(files[0]))
     atoms = u.select_atoms(selection)
+    ref_atoms = ref.select_atoms(selection)
 
     chunk = []
-    for ts in u.trajectory:
-        coords = atoms.positions.copy()  # (n_atoms, 3)
-        chunk.append(coords)
-
-        if len(chunk) == chunk_size:
-            yield np.array(chunk)  # (chunk_size, n_atoms, 3)
-            chunk = []
-
-    if chunk:
-        yield np.array(chunk)
-
-
-def stream_aligned(top, traj, selection, chunk_size=1000):
-    u = mda.Universe(top, traj)
-    ref = mda.Universe(top, traj)  # first frame as reference
-    align.AlignTraj(u, ref, select=selection, in_memory=False).run()
-    atoms = u.select_atoms(selection)
-    chunk = []
-    for ts in u.trajectory:
+    
+    for p in files:
+        u.load_new(str(p))  # load next "frame"
+        if align:
+            align.alignto(u, ref, select=selection)
         chunk.append(atoms.positions.copy())
+
         if len(chunk) == chunk_size:
             yield np.array(chunk)
             chunk = []
@@ -230,33 +49,25 @@ def stream_aligned(top, traj, selection, chunk_size=1000):
         yield np.array(chunk)
 
 
-
 if __name__ == "__main__":
     args = parser_arg.parse_args()
     output_path = args.output_path  
     input_top = args.pdb_0 
     struct_path = args.path_to_pdbs
-    pdb_list = []
-    for i in range(0, 100000):
-        pdb_list.append(f"{struct_path}/structure_z_{i}.pdb")
-
-    for j in range(100000, 200000):
-        pdb_list.append(f"{struct_path}/structure_z_{i}.pdb")
-    #[f for f in os.listdir(struct_path)]
     atomSelection = args.sele
-    #combine(struct_path, output_path)
-    input_traj = read_numerous_pdb(pdb_list)
+    align = args.align
+
     kmeans = MiniBatchKMeans(
     n_clusters=4,
     batch_size=1000)
 
-    for chunk in stream_traj_numpy(input_top, input_traj, atomSelection):
+    for chunk in stream_aligned(struct_path, atomSelection, align):
         X = chunk.reshape(chunk.shape[0], -1)
         kmeans.partial_fit(X)
 
     labels_all = []
 
-    for chunk in stream_traj_numpy(input_top, input_traj, atomSelection):
+    for chunk in stream_aligned(struct_path, atomSelection, align):
         X = chunk.reshape(chunk.shape[0], -1)
         labels = kmeans.predict(X)
         labels_all.append(labels)
