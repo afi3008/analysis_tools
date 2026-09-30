@@ -7,7 +7,7 @@
 module load PyTorch-bundle/2.1.2-foss-2023a-CUDA-12.1.1
 source /mimer/NOBACKUP/groups/naiss2025-23-641/afi/my_venv/bin/activate
 nvidia-cuda-mps-control -d 
-#export WANDB_API_KEY=372f9496dcd0cf05c0fbf9b5a57e34918483024e
+#export WANDB_API_KEY=
 #wandb login
 python aa_from_ca_mapping.py --mapping_smaller mapping_new.dat --mapping_bigger mapping_10.dat --output_prefix testing
 #python af_relax_test.py --output_prefix relaxed
